@@ -545,19 +545,20 @@
 
     .town-track {
       position: absolute;
-      left: 32px;
-      bottom: 8px;
+      left: 18px;
+      bottom: 18px;
       width: 1500px;
       height: calc(100% - 6px);
+      transform-origin: left bottom;
       transition: transform 760ms cubic-bezier(.2,.8,.2,1);
       z-index: 2;
     }
 
-    .stage[data-focus="plaza"] .town-track { transform: translateX(0); }
-    .stage[data-focus="school"] .town-track { transform: translateX(-170px); }
-    .stage[data-focus="clinic"] .town-track { transform: translateX(-470px); }
-    .stage[data-focus="station"] .town-track { transform: translateX(-620px); }
-    .stage[data-focus="mystery"] .town-track { transform: translateX(-360px); }
+    .stage[data-focus="plaza"] .town-track { transform: translateX(0) scale(.82); }
+    .stage[data-focus="school"] .town-track { transform: translateX(-140px) scale(.82); }
+    .stage[data-focus="clinic"] .town-track { transform: translateX(-385px) scale(.82); }
+    .stage[data-focus="station"] .town-track { transform: translateX(-508px) scale(.82); }
+    .stage[data-focus="mystery"] .town-track { transform: translateX(-295px) scale(.82); }
 
     .town-building {
       position: absolute;
@@ -1820,6 +1821,11 @@
         </div>
       </section>
 
+      <div class="utility-row">
+        <button class="ghost-btn" id="hintBtn" type="button">督導來電</button>
+        <button class="ghost-btn" id="restartBtn" type="button">重新開始</button>
+      </div>
+
       <section class="panel">
         <h2 class="panel-title">物件背包</h2>
         <ul class="inventory-list" id="inventoryList"></ul>
@@ -1828,11 +1834,6 @@
           <button class="ghost-btn" id="clearSelectionBtn" type="button">清空選取</button>
         </div>
       </section>
-
-      <div class="utility-row">
-        <button class="ghost-btn" id="hintBtn" type="button">督導來電</button>
-        <button class="ghost-btn" id="restartBtn" type="button">重新開始</button>
-      </div>
     </aside>
 
     <main class="main">
@@ -2924,6 +2925,15 @@
       );
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
     function localLeaderboard() {
       try {
         return JSON.parse(localStorage.getItem("starlightLeaderboard") || "[]");
@@ -2934,8 +2944,10 @@
 
     function renderLeaderboard() {
       const board = localLeaderboard().slice(0, 10);
-      if (!board.length) return "<p>尚無本機排行榜紀錄。部署到 Render 後可改接後端 API。</p>";
-      return `<ol>${board.map(row => `<li>${row.name}：${row.score} 分｜${row.rating}｜${row.ending}</li>`).join("")}</ol>`;
+      if (!board.length) return "<p>尚無本機排行榜紀錄。</p>";
+      return `<ol>${board.map(row => `
+        <li>${escapeHtml(row.name)}：${Number(row.score) || 0} 分｜${escapeHtml(row.rating)}｜${escapeHtml(row.ending)}</li>
+      `).join("")}</ol>`;
     }
 
     function updateFloatingRank() {
@@ -2945,12 +2957,13 @@
       els.rankMiniScore.textContent = score + " 分";
       const board = localLeaderboard().slice(0, 5);
       els.floatingLeaderboard.innerHTML = board.length
-        ? board.map(row => `<li>${row.name}：${row.score}</li>`).join("")
+        ? board.map(row => `<li>${escapeHtml(row.name)}：${Number(row.score) || 0}</li>`).join("")
         : "<li>尚無紀錄</li>";
     }
 
     function saveLocalScore(score, rating, endingTitle) {
       const input = document.getElementById("playerName");
+      const button = document.getElementById("saveScoreBtn");
       const name = (input.value || "匿名社工").trim().slice(0, 16);
       const board = localLeaderboard();
       board.push({ name, score, rating, ending: endingTitle, at: new Date().toISOString() });
@@ -2958,118 +2971,9 @@
       localStorage.setItem("starlightLeaderboard", JSON.stringify(board.slice(0, 20)));
       document.getElementById("leaderboardList").innerHTML = renderLeaderboard();
       updateFloatingRank();
-    }
-
-    let sharedLeaderboardCache = [];
-    let leaderboardSource = "loading";
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-    }
-
-    function saveLocalBackup(row) {
-      const board = localLeaderboard();
-      board.push({ ...row, at: new Date().toISOString() });
-      board.sort((a, b) => b.score - a.score);
-      localStorage.setItem("starlightLeaderboard", JSON.stringify(board.slice(0, 20)));
-    }
-
-    async function fetchSharedLeaderboard(limit = 10) {
-      try {
-        const response = await fetch(`/api/leaderboard?limit=${limit}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("leaderboard api failed");
-        sharedLeaderboardCache = await response.json();
-        leaderboardSource = "shared";
-      } catch (error) {
-        sharedLeaderboardCache = localLeaderboard();
-        leaderboardSource = "local";
-      }
-      return sharedLeaderboardCache;
-    }
-
-    function renderLeaderboardRows(board, emptyText) {
-      if (!board.length) return `<p>${emptyText}</p>`;
-      return `<ol>${board.map(row => `
-        <li>${escapeHtml(row.name)}：${Number(row.score) || 0} 分｜${escapeHtml(row.rating)}｜${escapeHtml(row.ending)}</li>
-      `).join("")}</ol>`;
-    }
-
-    function renderLeaderboard() {
-      const emptyText = leaderboardSource === "local"
-        ? "暫時無法連線到共用排行榜，這裡先顯示本機紀錄。"
-        : "尚無全玩家排行榜紀錄。";
-      return renderLeaderboardRows(sharedLeaderboardCache.slice(0, 10), emptyText);
-    }
-
-    function updateFloatingRank() {
-      const score = calculateLiveScore();
-      els.liveScore.textContent = score;
-      els.liveRating.textContent = ratingForScore(score);
-      els.rankMiniScore.textContent = score + " 分";
-      const board = sharedLeaderboardCache.slice(0, 5);
-      els.floatingLeaderboard.innerHTML = board.length
-        ? board.map(row => `<li>${escapeHtml(row.name)}：${Number(row.score) || 0}</li>`).join("")
-        : `<li>${leaderboardSource === "loading" ? "載入排行榜..." : "尚無紀錄"}</li>`;
-    }
-
-    async function refreshLeaderboardTargets() {
-      await fetchSharedLeaderboard(10);
-      const list = document.getElementById("leaderboardList");
-      if (list) list.innerHTML = renderLeaderboard();
-      updateFloatingRank();
-    }
-
-    async function saveLocalScore(score, rating, endingTitle) {
-      const input = document.getElementById("playerName");
-      const button = document.getElementById("saveScoreBtn");
-      const name = (input.value || "匿名社工").trim().slice(0, 16);
-      const row = {
-        name,
-        score,
-        rating,
-        ending: endingTitle,
-        safety: state.safety,
-        trust: state.trust,
-        network: state.network,
-        action: state.action,
-        procedure: state.procedure,
-        time_used: state.time
-      };
-
       if (button) {
-        button.disabled = true;
-        button.textContent = "送出中...";
-      }
-
-      try {
-        const response = await fetch("/api/scores", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(row)
-        });
-        if (!response.ok) throw new Error("score api failed");
-        if (button) button.textContent = "已送出";
-        await refreshLeaderboardTargets();
-      } catch (error) {
-        saveLocalBackup(row);
-        leaderboardSource = "local";
-        sharedLeaderboardCache = localLeaderboard();
-        if (button) button.textContent = "已暫存本機";
-        const list = document.getElementById("leaderboardList");
-        if (list) list.innerHTML = renderLeaderboard();
-        updateFloatingRank();
-      } finally {
-        if (button) {
-          window.setTimeout(() => {
-            button.disabled = false;
-            button.textContent = "送出分數";
-          }, 1000);
-        }
+        button.textContent = "已保存本機";
+        window.setTimeout(() => { button.textContent = "送出分數"; }, 1000);
       }
     }
 
@@ -3094,7 +2998,7 @@
             <button class="primary-btn" id="saveScoreBtn" type="button">送出分數</button>
           </div>
           <div id="leaderboardList">${renderLeaderboard()}</div>
-          <p class="intro-note">正式部署後會送到全玩家共用排行榜；若 API 暫時無法連線，系統會先保留本機紀錄。</p>
+          <p class="intro-note">排行榜僅保存於目前瀏覽器的本機紀錄，不會上傳到後台。</p>
         </div>
       `);
       document.getElementById("saveScoreBtn").addEventListener("click", () => saveLocalScore(score.total, score.rating, ending.title));
@@ -3212,7 +3116,6 @@
     els.rankToggle.addEventListener("click", () => els.rankWidget.classList.toggle("collapsed"));
 
     update();
-    refreshLeaderboardTargets();
   </script>
 </body>
 </html>
